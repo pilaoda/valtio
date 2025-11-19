@@ -522,4 +522,49 @@ describe('optimization', () => {
     expect(renderFn).toBeCalledTimes(3)
     expect(screen.getByText('Nested a: 1')).toBeInTheDocument()
   })
+
+  it('no rerender if get ownKeys and only write nested prop', async () => {
+    const state = proxy({ a: { v: 0 }, b: { v: 0 } })
+
+    const renderFn = vi.fn()
+    const Component = () => {
+      const snap = useSnapshot(state, { initEntireSubscribe: false })
+      renderFn()
+      return (
+        <>
+          <div>keys: {Object.keys(snap).join(', ')}</div>
+          <button
+            onClick={() => {
+              state.a.v++
+            }}
+          >
+            increment v
+          </button>
+          <button
+            onClick={() => {
+              (state as any).c = { v: 0 }
+            }}
+          >
+            add key
+          </button>
+        </>
+      )
+    }
+
+    render(<Component />)
+
+    expect(screen.getByText('keys: a, b')).toBeInTheDocument()
+    expect(renderFn).toBeCalledTimes(1)
+
+    fireEvent.click(screen.getByText('increment v'))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+    expect(renderFn).toBeCalledTimes(1)
+
+    fireEvent.click(screen.getByText('add key'))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+    expect(renderFn).toBeCalledTimes(2)
+    expect(screen.getByText('keys: a, b, c')).toBeInTheDocument()
+  })
 })
