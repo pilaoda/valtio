@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { proxy, useSnapshot } from 'valtio'
@@ -565,6 +565,55 @@ describe('optimization', () => {
     await act(() => vi.advanceTimersByTimeAsync(0))
 
     expect(renderFn).toBeCalledTimes(2)
+    expect(screen.getByText('keys: a, b, c')).toBeInTheDocument()
+  })
+
+  it('no rerender if get ownKeys in effect and only write nested prop', async () => {
+    const state = proxy({ a: { v: 0 }, b: { v: 0 } })
+
+    const renderFn = vi.fn()
+    const Component = () => {
+      const snap = useSnapshot(state, { initEntireSubscribe: false })
+      const [keys, setKeys] = useState<string>()
+      useEffect(() => {
+        setKeys(Object.keys(snap).join(', '))
+      }, [snap])
+      renderFn()
+      return (
+        <>
+          <div>keys: {keys}</div>
+          <button
+            onClick={() => {
+              state.a.v++
+            }}
+          >
+            increment v
+          </button>
+          <button
+            onClick={() => {
+              ;(state as any).c = { v: 0 }
+            }}
+          >
+            add key
+          </button>
+        </>
+      )
+    }
+
+    render(<Component />)
+
+    expect(screen.getByText('keys: a, b')).toBeInTheDocument()
+    expect(renderFn).toBeCalledTimes(2)
+
+    fireEvent.click(screen.getByText('increment v'))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+    expect(renderFn).toBeCalledTimes(2)
+
+    fireEvent.click(screen.getByText('add key'))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+    expect(renderFn).toBeCalledTimes(4)
     expect(screen.getByText('keys: a, b, c')).toBeInTheDocument()
   })
 })

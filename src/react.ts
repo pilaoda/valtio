@@ -124,7 +124,7 @@ const recordUsage = (
   }
 
   if (type === ALL_OWN_KEYS_PROPERTY) {
-    used[ALL_OWN_KEYS_PROPERTY] ??= observer.observe(proxyObject)
+    used[ALL_OWN_KEYS_PROPERTY] ??= observer.observe(proxyObject, allKeysSymbol)
   } else {
     let map = used[type]
     if (!map) {
