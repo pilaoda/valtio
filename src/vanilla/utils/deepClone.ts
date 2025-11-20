@@ -1,9 +1,9 @@
 import {
   unstable_getInternalStates,
   valtioDebugProxyUID,
-} from '../../vanilla.ts'
-import { isProxyMap, proxyMap } from './proxyMap.ts'
-import { isProxySet, proxySet } from './proxySet.ts'
+} from '../../vanilla'
+import { isProxyMap, proxyMap } from './proxyMap'
+import { isProxySet, proxySet } from './proxySet'
 
 const isObject = (x: unknown): x is object =>
   typeof x === 'object' && x !== null

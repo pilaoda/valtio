@@ -2,10 +2,9 @@
   "name": "valtio",
   "description": "🧙 Valtio makes proxy-state simple for React and Vanilla",
   "private": true,
-  "type": "commonjs",
   "version": "2.1.7",
-  "main": "./index.js",
-  "types": "./index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "typesVersions": {
     ">=4.5": {
       "esm/*": [
@@ -26,34 +25,8 @@
   },
   "exports": {
     "./package.json": "./package.json",
-    ".": {
-      "react-native": {
-        "types": "./index.d.ts",
-        "default": "./index.js"
-      },
-      "import": {
-        "types": "./esm/index.d.mts",
-        "default": "./esm/index.mjs"
-      },
-      "default": {
-        "types": "./index.d.ts",
-        "default": "./index.js"
-      }
-    },
-    "./*": {
-      "react-native": {
-        "types": "./*.d.ts",
-        "default": "./*.js"
-      },
-      "import": {
-        "types": "./esm/*.d.mts",
-        "default": "./esm/*.mjs"
-      },
-      "default": {
-        "types": "./*.d.ts",
-        "default": "./*.js"
-      }
-    }
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
   },
   "files": [
     "**"
@@ -61,7 +34,8 @@
   "sideEffects": false,
   "scripts": {
     "prebuild": "shx rm -rf dist",
-    "build": "pnpm run prebuild && pnpm run \"/^build:.*/\" && pnpm run postbuild",
+    "build": "tsc",
+	"watch": "tsc --watch",
     "build-watch": "pnpm run \"/^build:.*/\" --watch",
     "build:base": "rollup -c",
     "build:utils": "rollup -c --config-utils",
@@ -69,7 +43,6 @@
     "build:vanilla_utils": "rollup -c --config-vanilla_utils",
     "build:react": "rollup -c --config-react",
     "build:react_utils": "rollup -c --config-react_utils",
-    "postbuild": "pnpm run patch-d-ts && pnpm run copy && pnpm run patch-old-ts && pnpm run patch-esm-ts",
     "fix": "pnpm run fix:lint && pnpm run fix:format",
     "fix:format": "prettier . --write",
     "fix:lint": "eslint . --fix",

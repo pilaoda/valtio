@@ -1,5 +1,5 @@
 import { useLayoutEffect } from 'react'
-import { useSnapshot } from '../../react.ts'
+import { useSnapshot } from '../../react'
 
 const DUMMY_SYMBOL = Symbol()
 

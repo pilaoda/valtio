@@ -13,8 +13,8 @@ import {
   snapshot,
   subscribe,
   subscribeKey,
-} from './vanilla.ts'
-import type { Snapshot } from './vanilla.ts'
+} from './vanilla'
+import type { Snapshot } from './vanilla'
 
 /**
  * React hook to display affected paths in React DevTools for debugging

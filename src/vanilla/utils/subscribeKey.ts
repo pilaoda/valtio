@@ -1,1 +1,1 @@
-export { subscribeKey } from '../../vanilla.ts'
+export { subscribeKey } from '../../vanilla'

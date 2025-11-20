@@ -1,4 +1,4 @@
-import { markToTrack } from './react.ts'
+import { markToTrack } from './react'
 
 const isObject = (x: unknown): x is object =>
   typeof x === 'object' && x !== null
