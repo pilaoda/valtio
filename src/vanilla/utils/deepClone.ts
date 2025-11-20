@@ -1,7 +1,4 @@
-import {
-  unstable_getInternalStates,
-  valtioDebugProxyUID,
-} from '../../vanilla'
+import { unstable_getInternalStates, valtioDebugProxyUID } from '../../vanilla'
 import { isProxyMap, proxyMap } from './proxyMap'
 import { isProxySet, proxySet } from './proxySet'
 

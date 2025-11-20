@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { affectedToPathList } from 'proxy-compare'
 import {
+  allKeysSymbol,
   getProxyBySnapshot,
   snapshot,
   subscribe,
@@ -343,8 +344,10 @@ export class SnapshotObserver {
     for (const [proxyObject, used] of this.affected) {
       for (const key in used) {
         const type = key as keyof Used
-        if (type === NO_ACCESS_PROPERTY || type === ALL_OWN_KEYS_PROPERTY) {
+        if (type === NO_ACCESS_PROPERTY) {
           used[type] = this.observe(proxyObject)
+        } else if (type === ALL_OWN_KEYS_PROPERTY) {
+          used[type] = this.observe(proxyObject, allKeysSymbol)
         } else {
           const map = used[type]
           if (map) {

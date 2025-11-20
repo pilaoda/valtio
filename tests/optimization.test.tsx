@@ -542,7 +542,7 @@ describe('optimization', () => {
           </button>
           <button
             onClick={() => {
-              (state as any).c = { v: 0 }
+              ;(state as any).c = { v: 0 }
             }}
           >
             add key

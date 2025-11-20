@@ -13,14 +13,14 @@
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "declaration": true,
-	"sourceMap": true,
-	"declarationMap": true,
+    "sourceMap": true,
+    "declarationMap": true,
     "isolatedDeclarations": true,
     "types": ["@testing-library/jest-dom"],
     "noEmit": false,
     "baseUrl": ".",
-	"rootDir": "src",
-	"outDir": "dist",
+    "rootDir": "src",
+    "outDir": "dist",
     "paths": {
       "valtio": ["./src/index.ts"],
       "valtio/*": ["./src/*.ts"]

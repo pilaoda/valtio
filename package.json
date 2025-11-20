@@ -35,7 +35,7 @@
   "scripts": {
     "prebuild": "shx rm -rf dist",
     "build": "tsc",
-	"watch": "tsc --watch",
+    "watch": "tsc --watch",
     "build-watch": "pnpm run \"/^build:.*/\" --watch",
     "build:base": "rollup -c",
     "build:utils": "rollup -c --config-utils",

@@ -205,6 +205,8 @@ let createHandler: typeof createHandlerDefault = createHandlerDefault
 
 let valtioProxyCounter = 0
 export const valtioDebugProxyUID: symbol = Symbol.for('valtio-proxy-uid')
+export const allKeysSymbol: symbol = Symbol('valtio-internal-all-keys')
+
 /**
  * Creates a reactive proxy object that can be tracked for changes
  *
@@ -236,6 +238,11 @@ export function proxy<T extends object>(baseObject: T = {} as T): T {
       const prop = path[0]!
       const propListeners = propListenersMap.get(prop) ?? []
       for (const listener of propListeners) {
+        listener(op, nextVersion)
+      }
+
+      const allKeysListeners = propListenersMap.get(allKeysSymbol) ?? []
+      for (const listener of allKeysListeners) {
         listener(op, nextVersion)
       }
     }
