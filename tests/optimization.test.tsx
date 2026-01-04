@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { proxy, useSnapshot } from 'valtio'
@@ -176,7 +176,7 @@ describe('optimization', () => {
 
     const renderFn = vi.fn()
     const Component = () => {
-      const snap = useSnapshot(state)
+      const snap = useSnapshot(state, { clearOnRender: true })
       renderFn()
       return (
         <>
@@ -615,5 +615,56 @@ describe('optimization', () => {
 
     expect(renderFn).toBeCalledTimes(4)
     expect(screen.getByText('keys: a, b, c')).toBeInTheDocument()
+  })
+
+  it('subscribe sub object prop across rerender and memo', async () => {
+    const state = proxy({ a: { v: 0 }, b: { v: 0 } })
+
+    const renderFn = vi.fn()
+    const Component = () => {
+      const snap = useSnapshot(state, { initEntireSubscribe: false })
+      renderFn()
+			const bv = useMemo(() => snap.b.v, [snap.b])
+      return (
+        <>
+          <div>av: {snap.a.v}</div>
+          <div>bv: {bv}</div>
+          <button
+            onClick={() => {
+              state.a.v++
+            }}
+          >
+            increment av
+          </button>
+          <button
+            onClick={() => {
+              state.b.v++
+            }}
+          >
+            increment bv
+          </button>
+        </>
+      )
+    }
+
+    render(<Component />)
+
+    expect(screen.getByText('av: 0')).toBeInTheDocument()
+		expect(screen.getByText('bv: 0')).toBeInTheDocument()
+    expect(renderFn).toBeCalledTimes(1)
+
+    fireEvent.click(screen.getByText('increment av'))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+		expect(screen.getByText('av: 1')).toBeInTheDocument()
+		expect(screen.getByText('bv: 0')).toBeInTheDocument()
+    expect(renderFn).toBeCalledTimes(2)
+
+    fireEvent.click(screen.getByText('increment bv'))
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+		expect(screen.getByText('av: 1')).toBeInTheDocument()
+		expect(screen.getByText('bv: 1')).toBeInTheDocument()
+    expect(renderFn).toBeCalledTimes(3)
   })
 })
