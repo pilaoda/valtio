@@ -125,7 +125,8 @@ const recordUsage = (
 
   if (type === ALL_OWN_KEYS_PROPERTY) {
     used[ALL_OWN_KEYS_PROPERTY] ??= observer.observe(proxyObject, allKeysSymbol)
-  } else if (!used[ALL_OWN_KEYS_PROPERTY]) { // no need to record other if all keys are observed
+  } else if (!used[ALL_OWN_KEYS_PROPERTY]) {
+    // no need to record other if all keys are observed
     let map = used[type]
     if (!map) {
       map = new Map()
@@ -257,7 +258,10 @@ const createSnapshotProxy = <T>(
  */
 export function useSnapshot<T extends object>(
   proxyObject: T,
-  options?: Options & { testOnlyObserver?: SnapshotObserver, clearOnRender?: boolean },
+  options?: Options & {
+    testOnlyObserver?: SnapshotObserver
+    clearOnRender?: boolean
+  },
 ): Snapshot<T> {
   // per-hook observer, it's not ideal but memo compatible
   const observer = useMemo(
@@ -282,9 +286,9 @@ export function useSnapshot<T extends object>(
   }, [observer, currSnapshot])
 
   if (lastSnapshot.current !== currSnapshot) {
-		if (options?.clearOnRender) {
-			observer.clear() // we re-subscribe affected properties in render
-		}
+    if (options?.clearOnRender) {
+      observer.clear() // we re-subscribe affected properties in render
+    }
     if (observer.initEntireSubscribe) {
       recordUsage(proxyObject, observer, NO_ACCESS_PROPERTY)
     }

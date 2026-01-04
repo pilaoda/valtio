@@ -624,7 +624,7 @@ describe('optimization', () => {
     const Component = () => {
       const snap = useSnapshot(state, { initEntireSubscribe: false })
       renderFn()
-			const bv = useMemo(() => snap.b.v, [snap.b])
+      const bv = useMemo(() => snap.b.v, [snap.b])
       return (
         <>
           <div>av: {snap.a.v}</div>
@@ -650,21 +650,21 @@ describe('optimization', () => {
     render(<Component />)
 
     expect(screen.getByText('av: 0')).toBeInTheDocument()
-		expect(screen.getByText('bv: 0')).toBeInTheDocument()
+    expect(screen.getByText('bv: 0')).toBeInTheDocument()
     expect(renderFn).toBeCalledTimes(1)
 
     fireEvent.click(screen.getByText('increment av'))
     await act(() => vi.advanceTimersByTimeAsync(0))
 
-		expect(screen.getByText('av: 1')).toBeInTheDocument()
-		expect(screen.getByText('bv: 0')).toBeInTheDocument()
+    expect(screen.getByText('av: 1')).toBeInTheDocument()
+    expect(screen.getByText('bv: 0')).toBeInTheDocument()
     expect(renderFn).toBeCalledTimes(2)
 
     fireEvent.click(screen.getByText('increment bv'))
     await act(() => vi.advanceTimersByTimeAsync(0))
 
-		expect(screen.getByText('av: 1')).toBeInTheDocument()
-		expect(screen.getByText('bv: 1')).toBeInTheDocument()
+    expect(screen.getByText('av: 1')).toBeInTheDocument()
+    expect(screen.getByText('bv: 1')).toBeInTheDocument()
     expect(renderFn).toBeCalledTimes(3)
   })
 })
