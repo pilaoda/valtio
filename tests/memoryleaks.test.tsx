@@ -64,6 +64,82 @@ describe('no memory leaks with proxy', () => {
   })
 })
 
+describe('no memory leaks with SnapshotObserver', () => {
+  it('SnapshotObserver.affected should not prevent proxy from being garbage collected', async () => {
+    let state = proxy({ count: 0, nested: { value: 1 } })
+    const detector = new LeakDetector(state)
+
+    // Create observer and get snapshot (this adds proxyObject to affected Map)
+    const observer = new SnapshotObserver()
+    let snap: Snapshot<typeof state> | undefined = observer.getSnapshot(state)
+
+    // Access properties to trigger recording in affected Map
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    snap.count
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    snap.nested.value
+
+    // Release snap and state, but keep observer alive
+    // If affected uses Map, state will leak because Map strongly references the key
+    // If affected uses WeakMap, state can be garbage collected
+    snap = undefined
+
+    // Release state reference
+    state = undefined as never
+    await Promise.resolve()
+
+    // State should be garbage collected (only works if affected is WeakMap)
+    expect(await detector.isLeaking()).toBe(false)
+
+    // observer is still alive here (prevents it from being optimized away)
+    expect(observer).toBeDefined()
+  })
+
+  it('SnapshotObserver should not leak after multiple snapshots', async () => {
+    let state = proxy({ count: 0 })
+    const detector = new LeakDetector(state)
+
+    const observer = new SnapshotObserver()
+    let snap: Snapshot<typeof state> | undefined
+
+    // Get multiple snapshots
+    for (let i = 0; i < 10; i++) {
+      state.count = i
+      snap = observer.getSnapshot(state)
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      snap.count
+    }
+
+    snap = undefined
+    state = undefined as never
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(observer).toBeDefined()
+  })
+
+  it('SnapshotObserver with nested proxy should not leak', async () => {
+    let parent = proxy({ child: proxy({ value: 0 }) })
+    const parentDetector = new LeakDetector(parent)
+    const childDetector = new LeakDetector(parent.child)
+
+    const observer = new SnapshotObserver()
+    let snap: Snapshot<typeof parent> | undefined = observer.getSnapshot(parent)
+
+    // Access nested property
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    snap.child.value
+
+    snap = undefined
+    parent = undefined as never
+    await Promise.resolve()
+
+    expect(await parentDetector.isLeaking()).toBe(false)
+    expect(await childDetector.isLeaking()).toBe(false)
+    expect(observer).toBeDefined()
+  })
+})
+
 describe('no memory leaks with proxy with subscription', () => {
   it('empty object', async () => {
     let state = proxy({})

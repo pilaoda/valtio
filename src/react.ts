@@ -95,7 +95,9 @@ type Used = {
   [KEYS_PROPERTY]?: KeysMap
   [NO_ACCESS_PROPERTY]?: Unsubscribe
 }
-type Affected = Map<object, Used>
+// Use WeakMap to prevent memory leaks - proxy objects can be garbage collected
+// even if the observer is still alive
+type Affected = WeakMap<object, Used>
 
 const recordUsage = (
   proxyObject: object,
@@ -113,6 +115,8 @@ const recordUsage = (
   if (!used) {
     used = {}
     affected.set(proxyObject as object, used)
+    // Store WeakRef to allow iteration over affected keys without preventing GC
+    observer.affectedKeys.add(new WeakRef(proxyObject))
   }
 
   if (type === NO_ACCESS_PROPERTY) {
@@ -310,7 +314,11 @@ export function useSnapshot<T extends object>(
 export class SnapshotObserver {
   static counter = 0
   uid: number = SnapshotObserver.counter++
-  affected: Affected = new Map()
+  // WeakMap allows proxy objects to be garbage collected when no longer referenced elsewhere
+  affected: Affected = new WeakMap()
+  // WeakRef set enables iteration over affected keys without preventing GC
+  // (WeakMap doesn't support iteration, so we need this auxiliary structure)
+  affectedKeys: Set<WeakRef<object>> = new Set()
   proxyCache: WeakMap<any, any> = new WeakMap()
   notifyInSync: boolean
   initEntireSubscribe: boolean
@@ -343,11 +351,30 @@ export class SnapshotObserver {
     }
   }
 
+  /**
+   * Iterate over all affected proxy objects that haven't been garbage collected.
+   * Uses WeakRef.deref() to safely access objects - if deref() returns undefined,
+   * the object has been GC'd and we skip it.
+   */
+  private forEachAffected(
+    callback: (proxyObject: object, used: Used) => void,
+  ): void {
+    for (const ref of this.affectedKeys) {
+      const proxyObject = ref.deref()
+      if (proxyObject) {
+        const used = this.affected.get(proxyObject)
+        if (used) {
+          callback(proxyObject, used)
+        }
+      }
+    }
+  }
+
   enable(): void {
     if (this.enabled) return
     this.enabled = true
 
-    for (const [proxyObject, used] of this.affected) {
+    this.forEachAffected((proxyObject, used) => {
       for (const key in used) {
         const type = key as keyof Used
         if (type === NO_ACCESS_PROPERTY) {
@@ -363,14 +390,14 @@ export class SnapshotObserver {
           }
         }
       }
-    }
+    })
   }
 
   disable(): void {
     if (!this.enabled) return
     this.enabled = false
 
-    for (const [, used] of this.affected) {
+    this.forEachAffected((_, used) => {
       for (const key in used) {
         const type = key as keyof Used
         if (type === NO_ACCESS_PROPERTY || type === ALL_OWN_KEYS_PROPERTY) {
@@ -386,7 +413,7 @@ export class SnapshotObserver {
           }
         }
       }
-    }
+    })
   }
 
   subscribe(listener: () => void): () => void {
@@ -403,7 +430,8 @@ export class SnapshotObserver {
   clear(): void {
     const startEnabled = this.enabled
     this.disable()
-    this.affected.clear()
+    this.affected = new WeakMap()
+    this.affectedKeys.clear()
     if (startEnabled) {
       this.enable()
     }
