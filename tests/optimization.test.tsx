@@ -176,7 +176,7 @@ describe('optimization', () => {
 
     const renderFn = vi.fn()
     const Component = () => {
-      const snap = useSnapshot(state, { clearOnRender: true })
+      const snap = useSnapshot(state)
       renderFn()
       return (
         <>
@@ -233,12 +233,12 @@ describe('optimization', () => {
     fireEvent.click(screen.getByText('increment a'))
     await act(() => vi.advanceTimersByTimeAsync(0))
 
-    expect(renderFn).toBeCalledTimes(3)
+    expect(renderFn).toBeCalledTimes(4)
 
     fireEvent.click(screen.getByText('increment b'))
     await act(() => vi.advanceTimersByTimeAsync(0))
 
-    expect(renderFn).toBeCalledTimes(4)
+    expect(renderFn).toBeCalledTimes(5)
     expect(screen.getByText('Count: b:3')).toBeInTheDocument()
   })
 

@@ -135,7 +135,7 @@ const createSnapshotDefault = <T extends object>(
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     ;(target as any).size // touch property for registerSnapMap()
   }
-  snapToTargetMap.set(snap, target)
+  snapToTargetMap.set(snap, new WeakRef(target))
   return Object.preventExtensions(snap)
 }
 
@@ -193,7 +193,7 @@ const snapCache: WeakMap<object, [version: number, snap: unknown]> =
   new WeakMap()
 const versionHolder = [1] as [number]
 const proxyCache: WeakMap<object, ProxyObject> = new WeakMap()
-const snapToTargetMap: WeakMap<object, object> = new WeakMap()
+const snapToTargetMap: WeakMap<object, WeakRef<object>> = new WeakMap()
 
 // internal functions
 let objectIs: (a: unknown, b: unknown) => boolean = Object.is
@@ -512,7 +512,8 @@ export function ref<T extends object>(obj: T) {
 }
 
 export function getProxyBySnapshot<T extends object>(snapshot: Snapshot<T>): T {
-  const target = snapToTargetMap.get(snapshot as object)
+  const targetRef = snapToTargetMap.get(snapshot as object)
+  const target = targetRef?.deref()
   if (import.meta.env?.MODE !== 'production' && !target) {
     console.warn('Please use snapshot object')
   }
