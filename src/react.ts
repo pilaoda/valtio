@@ -154,7 +154,8 @@ const createSnapshotProxy = <T>(
   const { proxyCache, initEntireSubscribe } = observer
   if (proxyCache.get(snapshot)) return proxyCache.get(snapshot)!
 
-  const proxyObjectRef = new WeakRef(getProxyBySnapshot(snapshot)!)
+  const proxyTarget = getProxyBySnapshot(snapshot)
+  const proxyObjectRef = proxyTarget ? new WeakRef(proxyTarget) : null
   const proxySnapshot = newProxy(snapshot, {
     get(target, prop) {
       const desc = getPropertyDescriptor(target, prop)
@@ -162,7 +163,7 @@ const createSnapshotProxy = <T>(
         return Reflect.get(target, prop, proxySnapshot)
       }
 
-      const proxyObject = proxyObjectRef.deref()
+      const proxyObject = proxyObjectRef?.deref()
       if (!proxyObject) {
         return createSnapshotProxy(
           Reflect.get(target, prop) as Snapshot<T>,
@@ -199,21 +200,21 @@ const createSnapshotProxy = <T>(
       return createSnapshotProxy(childSnap, observer)
     },
     has(target, key) {
-      const proxyObject = proxyObjectRef.deref()
+      const proxyObject = proxyObjectRef?.deref()
       if (proxyObject) {
         recordUsage(proxyObject, observer, HAS_KEY_PROPERTY, key)
       }
       return Reflect.has(target, key)
     },
     getOwnPropertyDescriptor(target, key) {
-      const proxyObject = proxyObjectRef.deref()
+      const proxyObject = proxyObjectRef?.deref()
       if (proxyObject) {
         recordUsage(proxyObject, observer, HAS_OWN_KEY_PROPERTY, key)
       }
       return Reflect.getOwnPropertyDescriptor(target, key)
     },
     ownKeys(target) {
-      const proxyObject = proxyObjectRef.deref()
+      const proxyObject = proxyObjectRef?.deref()
       if (proxyObject) {
         recordUsage(proxyObject, observer, ALL_OWN_KEYS_PROPERTY)
       }
@@ -223,7 +224,7 @@ const createSnapshotProxy = <T>(
   proxyCache.set(snapshot, proxySnapshot)
 
   if (initEntireSubscribe) {
-    const proxyObject = proxyObjectRef.deref()
+    const proxyObject = proxyObjectRef?.deref()
     if (proxyObject) {
       recordUsage(proxyObject, observer, NO_ACCESS_PROPERTY)
     }

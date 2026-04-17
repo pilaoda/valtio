@@ -1,6 +1,59 @@
 import LeakDetector from 'jest-leak-detector'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SnapshotObserver, proxy, subscribeKey } from 'valtio'
+import * as vanilla from 'valtio/vanilla'
+
+describe('getProxyBySnapshot returns undefined (GC race)', () => {
+  it('createSnapshotProxy should not throw when getProxyBySnapshot returns undefined', () => {
+    // Simulate the scenario where snapToTargetMap's WeakRef target has been GC'd,
+    // causing getProxyBySnapshot to return undefined.
+    // In production this happens when the proxy target is collected between
+    // snapshot() and createSnapshotProxy() — a rare but real race condition.
+    const state = proxy({ child: { value: 42 } })
+    const observer = new SnapshotObserver({ initEntireSubscribe: false })
+
+    // Spy on getProxyBySnapshot to return undefined (simulating GC'd WeakRef)
+    const spy = vi
+      .spyOn(vanilla, 'getProxyBySnapshot')
+      .mockReturnValue(undefined as any)
+
+    try {
+      // This should NOT throw "TypeError: WeakRef: invalid target"
+      expect(() => {
+        const snap = observer.getSnapshot(state)
+        // Access a property to trigger the get trap
+        const _val = (snap as any).child?.value
+      }).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("snapshot proxy get trap should gracefully degrade when proxy target is GC'd", () => {
+    const state = proxy({ child: { value: 42 } })
+    const observer = new SnapshotObserver({ initEntireSubscribe: false })
+
+    // First, create a normal snapshot proxy (getProxyBySnapshot works fine)
+    const snap = observer.getSnapshot(state)
+
+    // Now mock getProxyBySnapshot to return undefined for child access
+    // (simulating the child's proxy target being GC'd mid-render)
+    const spy = vi
+      .spyOn(vanilla, 'getProxyBySnapshot')
+      .mockReturnValue(undefined as any)
+
+    try {
+      // Accessing snap.child triggers createSnapshotProxy for the child snapshot.
+      // With the bug: throws "TypeError: WeakRef: invalid target"
+      // After fix: gracefully returns snapshot without tracking
+      expect(() => {
+        const _childVal = (snap as any).child
+      }).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
 
 describe('minimal leak investigation', () => {
   // === vanilla.ts tests (all pass — vanilla is fine) ===

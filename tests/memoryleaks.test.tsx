@@ -65,6 +65,84 @@ describe('no memory leaks with proxy', () => {
 })
 
 describe('no memory leaks with SnapshotObserver', () => {
+  it('deleted child proxy should not leak through proxyCache after clear()', async () => {
+    // Simulate: parent proxy stays alive (like clsObjRecord[className]),
+    // child is deleted (like Reset() deleting a customID entry),
+    // observer stays alive (like atomWithObserver in Jotai store).
+    // Verify the deleted child can be GC'd despite proxyCache not being reset in clear().
+    const state = proxy({} as Record<string, { value: number }>)
+    state.agent1 = { value: 1 }
+
+    let childProxy: object | undefined = state.agent1
+    const childDetector = new LeakDetector(childProxy)
+
+    const observer = new SnapshotObserver({
+      enabled: true,
+      initEntireSubscribe: false,
+    })
+
+    // Get snapshot and access child — this populates proxyCache with child's snapshot→proxySnapshot
+    let snap: any = observer.getSnapshot(state)
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    snap.agent1.value
+
+    // Delete child from parent (simulates Reset() deleting customID keys)
+    delete state.agent1
+
+    // Clear observer — this resets affected/affectedKeys but NOT proxyCache
+    observer.clear()
+
+    // Get new snapshot so snapCache is updated (old snapshot overwritten)
+    snap = observer.getSnapshot(state)
+
+    // Release direct reference to child proxy
+    childProxy = undefined
+    await Promise.resolve()
+
+    // Child proxy should be GC-able.
+    // proxyCache is a WeakMap — old entries are ephemerons that don't prevent GC.
+    expect(await childDetector.isLeaking()).toBe(false)
+
+    // observer and state stay alive
+    expect(observer).toBeDefined()
+    expect(state).toBeDefined()
+    expect(snap).toBeDefined()
+  })
+
+  it('deleted child proxy should not leak when parent stays alive and no new snapshot taken', async () => {
+    // Even without requesting a new snapshot after delete,
+    // the child proxy should eventually be collectible.
+    const state = proxy({} as Record<string, { value: number }>)
+    state.agent1 = { value: 1 }
+
+    let childProxy: object | undefined = state.agent1
+    const childDetector = new LeakDetector(childProxy)
+
+    const observer = new SnapshotObserver({
+      enabled: true,
+      initEntireSubscribe: false,
+    })
+
+    let snap: any = observer.getSnapshot(state)
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    snap.agent1.value
+
+    // Delete child and clear observer, but do NOT get a new snapshot
+    delete state.agent1
+    observer.clear()
+
+    // Release references
+    snap = undefined
+    childProxy = undefined
+    await Promise.resolve()
+
+    // Child should still be GC-able — proxyCache and snapCache use WeakMaps
+    expect(await childDetector.isLeaking()).toBe(false)
+
+    expect(observer).toBeDefined()
+    expect(state).toBeDefined()
+  })
+
   it('SnapshotObserver.affected should not prevent proxy from being garbage collected', async () => {
     let state = proxy({ count: 0, nested: { value: 1 } })
     const detector = new LeakDetector(state)
