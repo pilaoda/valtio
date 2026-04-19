@@ -391,7 +391,10 @@ export class SnapshotObserver {
       return subscribeKey(
         proxyObject as any,
         key,
-        this.broadcast,
+        () => {
+          this.handleAllKeysChange(proxyObject)
+          this.broadcast()
+        },
         this.notifyInSync,
       )
     } else {
@@ -405,6 +408,20 @@ export class SnapshotObserver {
         },
         this.notifyInSync,
       )
+    }
+  }
+
+  /**
+   * ALL_OWN_KEYS prune: called when allKeysSymbol fires (any property changed).
+   * Iterates all tracked children to detect deletions/replacements that
+   * allKeysSymbol alone cannot pinpoint to a specific key.
+   */
+  private handleAllKeysChange(parent: object): void {
+    const children = this.childProxies.get(parent)
+    if (!children) return
+    // Snapshot keys before iteration since handleKeyChange may modify the map
+    for (const key of [...children.keys()]) {
+      this.handleKeyChange(parent, key)
     }
   }
 

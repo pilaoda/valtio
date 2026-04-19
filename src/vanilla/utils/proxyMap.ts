@@ -67,7 +67,7 @@ export function proxyMap<K, V>(entries?: Iterable<[K, V]> | undefined | null) {
   const snapMapCache = new WeakMap<object, Map<K, number>>()
   const registerSnapMap = () => {
     const cache = snapCache.get(vObject)
-    const latestSnap = cache?.[1]
+    const latestSnap = cache?.[1].deref()
     if (latestSnap && !snapMapCache.has(latestSnap)) {
       const clonedMap = new Map(indexMap)
       snapMapCache.set(latestSnap, clonedMap)

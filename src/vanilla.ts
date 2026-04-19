@@ -87,14 +87,20 @@ const createSnapshotDefault = <T extends object>(
   version: number,
 ): T => {
   const cache = snapCache.get(target)
-  if (cache?.[0] === version) {
-    return cache[1] as T
+  // The cached snap is held weakly: if nothing else references it (e.g. React
+  // fiber, user code, enclosing snapshot), the WeakRef may deref to undefined
+  // and we rebuild a fresh snap. This prevents the entire cached snapshot
+  // tree from being pinned to memory by a long-lived parent proxy target
+  // forever (see `snapCache pins old snapshot tree` test in memoryleaks).
+  const cachedSnap = cache?.[1].deref()
+  if (cache?.[0] === version && cachedSnap) {
+    return cachedSnap as T
   }
   const snap: any = Array.isArray(target)
     ? []
     : Object.create(Object.getPrototypeOf(target))
   markToTrack(snap, true) // mark to track
-  snapCache.set(target, [version, snap])
+  snapCache.set(target, [version, new WeakRef(snap)])
   Reflect.ownKeys(target).forEach((key) => {
     if (Object.getOwnPropertyDescriptor(snap, key)) {
       // Only the known case is Array.length so far.
@@ -189,7 +195,7 @@ const createHandlerDefault = <T extends object>(
 // internal states
 const proxyStateMap: WeakMap<ProxyObject, ProxyState> = new WeakMap()
 const refSet: WeakSet<object> = new WeakSet()
-const snapCache: WeakMap<object, [version: number, snap: unknown]> =
+const snapCache: WeakMap<object, [version: number, snap: WeakRef<object>]> =
   new WeakMap()
 const versionHolder = [1] as [number]
 const proxyCache: WeakMap<object, ProxyObject> = new WeakMap()
@@ -206,6 +212,26 @@ let createHandler: typeof createHandlerDefault = createHandlerDefault
 let valtioProxyCounter = 0
 export const valtioDebugProxyUID: symbol = Symbol.for('valtio-proxy-uid')
 export const allKeysSymbol: symbol = Symbol('valtio-internal-all-keys')
+
+// Module-level factory for prop listeners registered on child proxies.
+//
+// CRITICAL for memory: this must live OUTSIDE proxy() so its closure does
+// NOT capture the entire proxy() scope (baseObject, listeners, propProxyStates,
+// notifyUpdate itself as a strong binding, etc.). The only reference back to
+// the parent is through the WeakRef, allowing the parent to be GC'd when
+// external references are dropped.
+const createPropListenerImpl = (
+  notifyUpdateWeakRef: WeakRef<(op: Op, nextVersion?: number) => void>,
+  prop: string | symbol,
+): Listener => {
+  return (op, nextVersion) => {
+    const curNotifyUpdate = notifyUpdateWeakRef.deref()
+    if (!curNotifyUpdate) return // parent has been garbage collected
+    const newOp: Op = [...op]
+    newOp[1] = [prop, ...(newOp[1] as Path)]
+    curNotifyUpdate(newOp, nextVersion)
+  }
+}
 
 /**
  * Creates a reactive proxy object that can be tracked for changes
@@ -260,13 +286,14 @@ export function proxy<T extends object>(baseObject: T = {} as T): T {
     }
     return version
   }
-  const createPropListener =
-    (prop: string | symbol): Listener =>
-    (op, nextVersion) => {
-      const newOp: Op = [...op]
-      newOp[1] = [prop, ...(newOp[1] as Path)]
-      notifyUpdate(newOp, nextVersion)
-    }
+  // WeakRef to notifyUpdate so that propListeners registered on child proxies
+  // do NOT strongly retain this parent proxy's internal scope.
+  //
+  // See createPropListener (module-level) for details. The WeakRef itself is
+  // the only thing the child-side listener closure captures from this parent.
+  const notifyUpdateWeakRef = new WeakRef(notifyUpdate)
+  const createPropListener = (prop: string | symbol): Listener =>
+    createPropListenerImpl(notifyUpdateWeakRef, prop)
   const propProxyStates = new Map<
     string | symbol,
     readonly [ProxyState, RemoveListener?]
@@ -461,6 +488,7 @@ export function subscribeKey<T extends object, K extends keyof T>(
     ops.push(op)
     if (notifyInSync) {
       callback(proxyObject[key])
+      ops.length = 0
       return
     }
     if (!promise) {
@@ -469,6 +497,7 @@ export function subscribeKey<T extends object, K extends keyof T>(
         if (isListenerActive) {
           callback(proxyObject[key])
         }
+        ops.length = 0
       })
     }
   }

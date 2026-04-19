@@ -1,4 +1,4 @@
-import { StrictMode, useState } from 'react'
+﻿import { StrictMode, useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import LeakDetector from 'jest-leak-detector'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import {
   type Snapshot,
   SnapshotObserver,
   proxy,
+  snapshot,
   subscribe,
   useSnapshot,
 } from 'valtio'
@@ -1514,5 +1515,191 @@ describe('auto-prune edge cases (review findings)', () => {
     shared2.value = 200
     await act(() => vi.advanceTimersByTimeAsync(0))
     expect(screen.getByText('C2: 200')).toBeInTheDocument()
+  })
+})
+
+describe('allKeysSymbol memory leak', () => {
+  /**
+   * BUG: Object.values() on a snapshot triggers allKeysSymbol subscription
+   * on the container. allKeysSymbol suppresses per-key KEYS_PROPERTY
+   * subscriptions, so when an entry is deleted, the observer never calls
+   * pruneProxy on the deleted child. Combined with initEntireSubscribe,
+   * this keeps the deleted child's listeners non-empty — blocking cascade
+   * cleanup of propProxyStates — so a persistent sibling proxy retains a
+   * listener that captures the deleted child's full scope.
+   */
+  it('deleted entry observed via Object.values leaks when child has persistent proxy child', async () => {
+    const hero = proxy({ name: 'hero1' }) // long-lived sibling
+    const container = proxy<Record<string, { hero: typeof hero }>>({})
+    container.b1 = { hero }
+
+    let b1Ref: object | undefined = container.b1
+    const detector = new LeakDetector(b1Ref)
+
+    const observer = new SnapshotObserver({ enabled: true })
+    let snap: any = observer.getSnapshot(container)
+    void Object.values(snap) // triggers allKeysSymbol path
+
+    delete container.b1
+    await Promise.resolve()
+    await Promise.resolve()
+
+    snap = observer.getSnapshot(container)
+    void Object.values(snap)
+
+    b1Ref = undefined
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(hero).toBeDefined()
+  })
+
+  it('control: deleted entry accessed by specific key does not leak', async () => {
+    const hero = proxy({ name: 'hero1' })
+    const container = proxy<Record<string, { hero: typeof hero }>>({})
+    container.b1 = { hero }
+
+    let b1Ref: object | undefined = container.b1
+    const detector = new LeakDetector(b1Ref)
+
+    const observer = new SnapshotObserver({ enabled: true })
+    let snap: any = observer.getSnapshot(container)
+    void snap.b1.hero.name // KEYS_PROPERTY subscription for "b1"
+
+    delete container.b1
+    await Promise.resolve()
+    snap = observer.getSnapshot(container)
+
+    b1Ref = undefined
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(hero).toBeDefined()
+  })
+})
+
+describe('short-lived parent retains long-lived child via propProxyStates', () => {
+  /**
+   * BUG: when `parent.child = heroProxy` is assigned while parent has
+   * subscribers, valtio adds a createPropListener closure to
+   * heroProxy.listeners that captures parent's scope. Without WeakRef
+   * protection (now fixed), the long-lived hero retains the short-lived
+   * parent forever.
+   */
+  it('short-lived parent dropped without delete/unsubscribe should GC', async () => {
+    const hero = proxy({ name: 'hero1' }) // long-lived
+    let parent: { hero: typeof hero } | undefined = proxy({ hero })
+    const detector = new LeakDetector(parent)
+
+    subscribe(parent, () => {}) // app forgets to unsubscribe
+
+    parent = undefined
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(hero).toBeDefined()
+  })
+
+  it('control: unsubscribe before drop releases parent', async () => {
+    const hero = proxy({ name: 'hero1' })
+    let parent: { hero: typeof hero } | undefined = proxy({ hero })
+    const detector = new LeakDetector(parent)
+
+    let unsub: (() => void) | undefined = subscribe(parent, () => {})
+    unsub()
+    unsub = undefined
+    parent = undefined
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(hero).toBeDefined()
+  })
+
+  it('control: delete property before drop releases parent', async () => {
+    const hero = proxy({ name: 'hero1' })
+    let parent: { hero?: typeof hero } | undefined = proxy<{
+      hero?: typeof hero
+    }>({ hero })
+    const detector = new LeakDetector(parent)
+
+    subscribe(parent, () => {})
+    delete parent.hero
+    parent = undefined
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(hero).toBeDefined()
+  })
+})
+
+describe('snapCache pins old snapshot tree when long-lived parent survives', () => {
+  /**
+   * BUG: snapCache is a module-level WeakMap keyed by proxy target with
+   * STRONG value `[version, snap]`. As long as the parent proxy target
+   * stays alive, the cached snapshot tree stays alive.
+   *
+   * When `parent.child` is replaced but nobody calls snapshot(parent) again
+   * (e.g. React component unmounted, no UI reads it anymore), snapCache
+   * keeps the old version's snapshot tree indefinitely. The old child's
+   * snapshot (class name inherited from target) remains pinned.
+   */
+  it('old child snapshot pinned by snapCache when parent survives without re-snapshot', async () => {
+    // Use custom class so DevTools would label the snapshot as "Child"
+    class Child {
+      id = 1
+    }
+    class Parent {
+      child: Child | null = new Child()
+    }
+
+    const parent = proxy(new Parent())
+
+    // Create detector on the child snapshot without keeping a local ref to it.
+    // Wrap in IIFE so `oldSnap` goes out of scope after it exits.
+    const detector = (() => {
+      const oldSnap: any = snapshot(parent)
+      void oldSnap.child.id // materialize deep snapshot
+      return new LeakDetector(oldSnap.child)
+    })()
+
+    // Replace child. Note: we do NOT call snapshot(parent) again.
+    parent.child = new Child()
+
+    await Promise.resolve()
+
+    // Expected: old child snapshot should be GC-able.
+    // Actual (bug): snapCache[parentTarget] still holds [v1, oldSnapParent],
+    // and oldSnapParent.child is the old child snapshot → pinned.
+    expect(await detector.isLeaking()).toBe(false)
+
+    expect(parent).toBeDefined()
+  })
+
+  it('control: re-snapshot after mutation releases old snapshot', async () => {
+    class Child {
+      id = 1
+    }
+    class Parent {
+      child: Child | null = new Child()
+    }
+
+    const parent = proxy(new Parent())
+
+    const detector = (() => {
+      const oldSnap: any = snapshot(parent)
+      void oldSnap.child.id
+      return new LeakDetector(oldSnap.child)
+    })()
+
+    parent.child = new Child()
+
+    // Re-snapshot refreshes snapCache[parentTarget], evicting old snap tree.
+    const newSnap: any = snapshot(parent)
+    void newSnap.child.id
+
+    await Promise.resolve()
+
+    expect(await detector.isLeaking()).toBe(false)
+    expect(parent).toBeDefined()
   })
 })
